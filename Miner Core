@@ -1,0 +1,122 @@
+using System;
+using System.Text;
+using System.Collections;
+using System.Collections.Generic;
+using VRageMath;
+using VRage.Game;
+using Sandbox.ModAPI.Interfaces;
+using Sandbox.ModAPI.Ingame;
+using Sandbox.Game.EntityComponents;
+using VRage.Game.Components;
+using VRage.Collections;
+using VRage.Game.ObjectBuilders.Definitions;
+using VRage.Game.ModAPI.Ingame;
+using SpaceEngineers.Game.ModAPI.Ingame;
+public sealed class Program : MyGridProgram
+{
+    // НАЧАЛО СКРИПТА
+    IMyTextPanel LCD;
+    List<IMyBatteryBlock> batteryBlocks;
+    List<IMyTerminalBlock> lamps;
+    List<IMyTerminalBlock> cargo;// контейнеры
+    List<IMyTerminalBlock> drills;// дрели
+    List<IMyTerminalBlock> connect ;//коннектор
+    List<IMyInventory> inventories; // Главный инвентарь
+    List<MyInventoryItem> items;
+    Dictionary<string, long> ores;
+    byte tick = 0;
+    Program()
+    {
+        LCD = GridTerminalSystem.GetBlockWithName("LCD") as IMyTextPanel;
+        Runtime.UpdateFrequency = UpdateFrequency.Update10;
+    }
+    public void Main(string arg)
+    {
+        if (tick++ % 12 == 0)
+            Refresh();
+        float curr = 0f, max = 0f , curr_power = 0, max_power =0;
+        foreach (IMyInventory i in inventories)
+        {
+            curr += (float)i.CurrentVolume;
+            max += (float)i.MaxVolume;
+        }
+        foreach (var i in batteryBlocks)
+        {
+            curr_power += i.CurrentStoredPower;
+            max_power += i.MaxStoredPower;
+        }
+        LCD.WriteText("Finding inventories count :" + inventories.Count.ToString() + "\nFinding lamps :" + lamps.Count);
+        LCD.WriteText("\nBusying valume: " + curr * 100 / max + " from 100%", true);
+        LCD.WriteText("\nAll resourser: ", true);
+        foreach(var i in ores)
+        {
+            LCD.WriteText("\n" + i.Key + " - " + i.Value+ "kg", true);
+            
+        }
+        LCD.WriteText("\nPower : " + "\nCurrent power: " + curr_power + " Mw" + "\nMax power: " + max_power + " Mw", true);
+        if ( curr*100/max >50f)
+        {    
+            if (curr * 100 / max < 90f)
+            foreach( IMyTerminalBlock i in lamps)
+            {
+                i.SetValueColor("Color", Color.Orange);
+            }
+            else
+                foreach (IMyTerminalBlock i in lamps)
+                {
+                    i.SetValueColor("Color", Color.Red);
+                }
+        }
+        
+        else foreach (IMyTerminalBlock i in lamps)
+            {
+                i.SetValueColor("Color", Color.White);
+            }
+    }
+    void Refresh()
+    {
+        batteryBlocks = new List<IMyBatteryBlock>();
+        cargo = new List<IMyTerminalBlock>();
+        drills = new List<IMyTerminalBlock>();
+        connect = new List<IMyTerminalBlock>();
+        lamps = new List<IMyTerminalBlock>();
+        inventories = new List<IMyInventory>();
+        ores = new Dictionary<string, long>();
+        items = new List<MyInventoryItem>();
+        GridTerminalSystem.GetBlocksOfType<IMyBatteryBlock>(batteryBlocks);
+        GridTerminalSystem.GetBlocksOfType<IMyCargoContainer>(cargo);
+        GridTerminalSystem.GetBlocksOfType<IMyShipConnector>(connect);
+        GridTerminalSystem.GetBlocksOfType<IMyShipDrill>(drills);
+        GridTerminalSystem.SearchBlocksOfName("[Lamp]", lamps);
+
+        foreach (IMyTerminalBlock i in cargo)
+        {
+            inventories.Add(i.GetInventory());
+        }
+        foreach (IMyTerminalBlock i in drills)
+        {
+            inventories.Add(i.GetInventory());
+        }
+        foreach (IMyTerminalBlock i in connect)
+        {
+            inventories.Add(i.GetInventory());
+        }
+        foreach(IMyInventory i in inventories)
+        {
+            i.GetItems(items);
+        }
+        foreach(var i in items)
+        {
+            try
+            {
+                ores.Add(i.Type.SubtypeId, i.Amount.RawValue / 1000000);
+            }
+            catch
+            {
+                ores[i.Type.SubtypeId]+= i.Amount.RawValue / 1000000;
+            }
+        }
+    }
+
+
+}
