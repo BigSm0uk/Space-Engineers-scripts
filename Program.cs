@@ -14,185 +14,128 @@ using VRage.Game.ModAPI.Ingame;
 using SpaceEngineers.Game.ModAPI.Ingame;
 public sealed class Program : MyGridProgram
 {
-    List<IMyGyro> gyro;
+    IMyBlockGroup ScanerSystem;
+    List<IMyMotorStator> Rotor = new List<IMyMotorStator>();
+    List<IMyTextPanel> LCD = new List<IMyTextPanel>();
+    List<IMyMotorStator> Hinge = new List<IMyMotorStator>();
+    List<IMyMotorStator> AzElSystem = new List<IMyMotorStator>();
+    List<IMyCameraBlock> Cameras = new List<IMyCameraBlock>();
+    List<IMyCockpit> Cockpit = new List<IMyCockpit>();
+    List<IMySoundBlock> soundBlocks = new List<IMySoundBlock>();
     IMyBroadcastListener Input_signal;
-    List<IMyRemoteControl> controller;
     MyIGCMessage message = new MyIGCMessage();
-    List<IMyCameraBlock> cameras;
-    List<IMyThrust> thrusters;
-    List<IMyShipMergeBlock> merge;
-    List<IMyGasTank> GasTanks;
-    List<IMyTimerBlock> timers;
-
-    IMyBlockGroup Rocket_System;
-
-    Vector3D TargetXYZ, DirectionTargetXYZ , UpXYZ , TargetVelXYZ;
-    
+    MyDetectedEntityInfo myDetectedEntityInfo;
     VRage.MyTuple<Vector3D, Vector3D> myTuple = new VRage.MyTuple<Vector3D, Vector3D>();
-    string tag_In = "228228", tag_OUT = "11111";
-    int tick_count = 0, WHAM_coount = 0, go_count = 0;
-    double ThrusterPower;
-    bool launch = false, isEnabled_thrust = false, is_WHAM = false, stockpile = true;
-   
+
+    bool track = false;
+    double Sx, h, t;
+    Vector3D TargetXYZ;
+    string tag_In1 = "228228", tag_In2 = "228229" , tag_OUT = "11111";
     Program()
     {
-        Input_signal = IGC.RegisterBroadcastListener(tag_In);
+        ScanerSystem = GridTerminalSystem.GetBlockGroupWithName("ScanerSystem");
+        ScanerSystem.GetBlocksOfType<IMyCockpit>(Cockpit);
+        ScanerSystem.GetBlocksOfType<IMySoundBlock>(soundBlocks);
+        ScanerSystem.GetBlocksOfType<IMyMotorStator>(AzElSystem);
+        ScanerSystem.GetBlocksOfType<IMyTextPanel>(LCD);
+        foreach (var i in AzElSystem)
+        {
+            if (i.CustomName.Contains("Rotor"))
+                Rotor.Add(i);
+            if (i.CustomName.Contains("Hinge"))
+                Hinge.Add(i);
+        }
+        ScanerSystem.GetBlocksOfType<IMyCameraBlock>(Cameras);
+        foreach (var i in Cameras)
+        {
+            i.EnableRaycast = true;
+        }
+        Input_signal = IGC.RegisterBroadcastListener(tag_In1);
+        Input_signal = IGC.RegisterBroadcastListener(tag_In2);
+        Echo("Rotor " + (Rotor.Count != 0 ? "here" : "fidnt"));
+        Echo("Hinge " + (Hinge.Count != 0 ? "here" : "fidnt"));
+        Echo("Cameras " + Cameras.Count);
+        Echo("Cockpit " + (Cockpit.Count != 0 ? "here" : "fidnt"));
         Runtime.UpdateFrequency = UpdateFrequency.Update1;
     }
-
     public void Main(string arg)
-    {      
-        if (tick_count++ % 120 == 0)
-            Refresher();
-            foreach (var i in GasTanks)
-            {
-                i.Stockpile = stockpile;
-            }
-        if (Input_signal.HasPendingMessage)
+    {
+        foreach(var i in Rotor)
+            i.TargetVelocityRad = Cockpit[0].RotationIndicator.Y * 0.1f;
+        foreach (var i in Hinge)
+            i.TargetVelocityRad = -Cockpit[0].RotationIndicator.X * 0.1f;
+        if(arg == "Detect")
         {
-            message = Input_signal.AcceptMessage();     
-            try
-            {
-                myTuple = (VRage.MyTuple<Vector3D, Vector3D>)message.Data;
-                if(myTuple.Item1 !=Vector3D.Zero )
-                    TargetXYZ = myTuple.Item1;
-                if (myTuple.Item2 != Vector3D.Zero)
-                    TargetVelXYZ = myTuple.Item2;
-            }    
-            catch
-            {
-                stockpile = false;
-                if (message.Data.ToString() == "start")
-                {                   
-                    launch = true;
-                    isEnabled_thrust = true;
-                    TorpedoVelCalc();
-                }
-                if (message.Data.ToString() == "WHAM")
-                {
-                    is_WHAM = true;
-                    isEnabled_thrust = true;
-                }
-            }
-        }
-        if (isEnabled_thrust)
-        {
-            merge[0].Enabled = false;
-            gyro[0].GyroOverride = true;
-            foreach (var i in thrusters)
-            {
-                i.Enabled = true;
-            }
-            isEnabled_thrust = false;
-        }
-        if (is_WHAM && ++WHAM_coount > 60)
-        {
+            Detect();
             
-            UpXYZ = -controller[0].GetNaturalGravity();
-            WHAM(UpXYZ);
         }
-        if (launch && !Vector3D.IsZero(TargetXYZ) && ++go_count >120)
+        if (arg == "WHAM")
         {
-            foreach (var i in cameras)
+            IGC.SendBroadcastMessage<string>(tag_In1, "WHAM");
+        }
+        if (arg == "start1")
+        {
+            IGC.SendBroadcastMessage<string>(tag_In1, "start");
+        }
+        if (arg == "start2")
+        {
+            IGC.SendBroadcastMessage<string>(tag_In2, "start");
+        }
+        if (arg == "Track start")
+        {
+            track = true;
+        }
+        if (arg == "Track stop")
+        {
+            track = false;
+        }
+        if (track)
+        {
+            Tracking_mode();
+            
+        }
+    }
+    void Detect()
+    {
+        foreach (var i in Cameras)
+        {
+            MyDetectedEntityInfo myDetectedEntityInfo_cameras = i.Raycast(10000, 0, 0);
+            if (myDetectedEntityInfo_cameras.Type == MyDetectedEntityType.LargeGrid)
             {
-                MyDetectedEntityInfo myDetectedEntityInfo = i.Raycast(10000, 0, 0);
-                if (myDetectedEntityInfo.Type == MyDetectedEntityType.LargeGrid)
+                myDetectedEntityInfo = myDetectedEntityInfo_cameras;
+                foreach (var j in soundBlocks)
                 {
-                    TargetXYZ = (Vector3D)myDetectedEntityInfo.HitPosition;
-                    TargetVelXYZ = myDetectedEntityInfo.Velocity;
-                    
+                    j.Play();
                 }
+                foreach (var j in LCD)
+                {
+                    j.WriteText("Large Grid " + myDetectedEntityInfo_cameras.Name);
+                    j.WriteText("\nX: " + myDetectedEntityInfo_cameras.Position.X, true);
+                    j.WriteText("\nY: " + myDetectedEntityInfo_cameras.Position.Y, true);
+                    j.WriteText("\nZ: " + myDetectedEntityInfo_cameras.Position.Z, true);
+                    j.WriteText("\nShip speed : " + myDetectedEntityInfo_cameras.Velocity.Length(), true);
+                    j.WriteText("\n" + (myDetectedEntityInfo_cameras.Position + myDetectedEntityInfo_cameras.Velocity.Length() *((Cockpit[0].GetPosition() - TargetXYZ + 2.5) / Math.Abs(myDetectedEntityInfo_cameras.Velocity.Length() - 300d) - 5)), true);
+                }
+                myTuple = VRage.MyTuple.Create<Vector3D, Vector3D>((Vector3D)myDetectedEntityInfo.HitPosition, myDetectedEntityInfo.Velocity);
+                IGC.SendBroadcastMessage<VRage.MyTuple<Vector3D, Vector3D>>(tag_In1, myTuple);
+                IGC.SendBroadcastMessage<VRage.MyTuple<Vector3D, Vector3D>>(tag_In2, myTuple);
             }
-            AIM();
+
         }
     }
-    void AIM()
+    void Tracking_mode()
     {
-        DirectionTargetXYZ = TorpedoVelCalc();
-        Vector3D V3DLeft = controller[0].WorldMatrix.Left;
-        Vector3D V3DUp = controller[0].WorldMatrix.Up;
-        Vector3D V3DFow = controller[0].WorldMatrix.Forward;
-
-        Vector3D TargetNorm = Vector3D.Normalize(DirectionTargetXYZ);
-        double pitch = Math.Acos(Vector3D.Dot(V3DUp, Vector3D.Normalize(Vector3D.Reject(TargetNorm , V3DLeft)))) - (Math.PI / 2);
-        double yaw = Math.Acos(Vector3D.Dot(V3DLeft, Vector3D.Normalize(Vector3D.Reject(TargetNorm, V3DUp)))) - (Math.PI / 2);
-        double roll = Math.Acos(Vector3D.Dot(V3DLeft, Vector3D.Normalize(Vector3D.Reject(-controller[0].GetNaturalGravity(), V3DFow)))) - (Math.PI / 2);
-
-        gyro[0].Yaw = (float)yaw * 5f;
-        gyro[0].Pitch = (float)pitch * 5f;
-        gyro[0].Roll = (float)roll;
-    }
-    void WHAM(Vector3D UpXYZ)
-    {               
-        Vector3D V3DLeft = controller[0].WorldMatrix.Left;
-        Vector3D V3DUp = controller[0].WorldMatrix.Up;
-        Vector3D V3DFow = controller[0].WorldMatrix.Forward;
-
-        if (WHAM_coount <= 600)
-            DirectionTargetXYZ = UpXYZ;
-        else
+        foreach (var i in Cameras)
         {
-            Vector3D Target = TargetXYZ - controller[0].GetPosition();
-            Vector3D TargProj = Vector3D.Normalize(controller[0].GetNaturalGravity()) * Vector3D.Dot(Target, Vector3D.Normalize(controller[0].GetNaturalGravity()));
-            DirectionTargetXYZ = Target - TargProj;
-            if (CalculateWham_Angle() < 0.26)
-                DirectionTargetXYZ = Target;
-        }
-        
-        Vector3D TargetNorm = Vector3D.Normalize(DirectionTargetXYZ);
-        double pitch = Math.Acos(Vector3D.Dot(V3DUp, Vector3D.Normalize(Vector3D.Reject(TargetNorm, V3DLeft)))) - (Math.PI / 2);
-        double yaw = Math.Acos(Vector3D.Dot(V3DLeft, Vector3D.Normalize(Vector3D.Reject(TargetNorm, V3DUp)))) - (Math.PI / 2);
-        double roll = Math.Acos(Vector3D.Dot(V3DLeft, Vector3D.Normalize(Vector3D.Reject(-controller[0].GetNaturalGravity(), V3DFow)))) - (Math.PI / 2);
-
-        gyro[0].Yaw = (float)yaw * 5f;
-        gyro[0].Pitch = (float)pitch * 5f;
-        gyro[0].Roll = (float)roll;
-        Echo(CalculateWham_Angle().ToString());
-    }
-    void Refresher ()
-    {
-        merge = new List<IMyShipMergeBlock>();
-        gyro = new List<IMyGyro>();
-        controller = new List<IMyRemoteControl>();
-        thrusters = new List<IMyThrust>();
-        cameras = new List<IMyCameraBlock>();
-        GasTanks = new List<IMyGasTank>();
-        timers = new List<IMyTimerBlock>();
-        Rocket_System = GridTerminalSystem.GetBlockGroupWithName("Rocket_System");
-        Rocket_System.GetBlocksOfType<IMyRemoteControl>(controller);
-        Rocket_System.GetBlocksOfType<IMyGyro>(gyro);
-        Rocket_System.GetBlocksOfType<IMyTimerBlock>(timers);
-        Rocket_System.GetBlocksOfType<IMyCameraBlock>(cameras);
-        Rocket_System.GetBlocksOfType<IMyThrust>(thrusters);
-        Rocket_System.GetBlocksOfType<IMyShipMergeBlock>(merge);
-        Rocket_System.GetBlocksOfType<IMyGasTank>(GasTanks);
-        Echo("Thrusters" + (thrusters.Count != 0 ? " here" : " fidnt"));
-        Echo("Controller" + (controller.Count != 0 ? " here" : " fidnt")); 
-        Echo("Timers" + (timers.Count != 0 ? " here" : " fidnt"));
-        Echo("Hydro " + GasTanks.Count );
-        Echo("Merge" + (merge.Count != 0 ? " here" : " fidnt"));
-        Echo("Cameras count " + cameras.Count);
-        if (cameras.Count != 0)
-        {
-            foreach (var i in cameras)
+            MyDetectedEntityInfo myDetectedEntityInfo_cameras = i.Raycast(10000, 0, 0);
+            if (myDetectedEntityInfo_cameras.Type == MyDetectedEntityType.LargeGrid)
             {
-                i.EnableRaycast = true;
-            }
+               myDetectedEntityInfo = myDetectedEntityInfo_cameras;
+              myTuple = VRage.MyTuple.Create<Vector3D, Vector3D>(myDetectedEntityInfo.Position, myDetectedEntityInfo.Velocity);
+                IGC.SendBroadcastMessage<VRage.MyTuple<Vector3D, Vector3D>>(tag_In1, myTuple);
+                IGC.SendBroadcastMessage<VRage.MyTuple<Vector3D, Vector3D>>(tag_In2, myTuple);
+            }            
         }
-        Echo("Gyro" + (gyro != null ? " here" : " fidnt"));
     }
-    Vector3D TorpedoVelCalc()
-    {
-        DirectionTargetXYZ = TargetXYZ - controller[0].GetPosition();
-        double orth = Vector3D.Dot(TargetVelXYZ, Vector3D.Normalize(DirectionTargetXYZ));
-        Vector3D TangXYZ = Vector3D.Reject(TargetVelXYZ, Vector3D.Normalize(DirectionTargetXYZ));
-        double scalarOrth = Math.Sqrt(controller[0].GetShipVelocities().LinearVelocity.Length() * controller[0].GetShipVelocities().LinearVelocity.Length() - TangXYZ.Length() * TangXYZ.Length());
-        Vector3D TorpOrthXYZ = Vector3D.Normalize(DirectionTargetXYZ) * scalarOrth;
-        return TorpOrthXYZ + TangXYZ;
-    }
-    double  CalculateWham_Angle ()
-    {
-        return Math.Acos(Vector3D.Dot(Vector3D.Normalize(controller[0].GetNaturalGravity()), Vector3D.Normalize(TargetXYZ - controller[0].GetPosition())));
-    }
-   
+
 }
