@@ -1,0 +1,62 @@
+using System;
+using System.Text;
+using System.Collections;
+using System.Collections.Generic;
+using VRageMath;
+using VRage.Game;
+using Sandbox.ModAPI.Interfaces;
+using Sandbox.ModAPI.Ingame;
+using Sandbox.Game.EntityComponents;
+using VRage.Game.Components;
+using VRage.Collections;
+using VRage.Game.ObjectBuilders.Definitions;
+using VRage.Game.ModAPI.Ingame;
+using SpaceEngineers.Game.ModAPI.Ingame;
+public sealed class Program : MyGridProgram
+{
+    IMyTextPanel LCD;
+    IMyBlockGroup GAS_group;
+    IMyBlockGroup Battery_group;
+    List<IMyGasTank> myGasTanks;
+    List<IMyBatteryBlock> Battery;
+
+    byte tick = 0;
+    public Program()
+    {       
+        LCD = GridTerminalSystem.GetBlockWithName("[Transporter] LCD") as IMyTextPanel;
+        Echo("Succses");
+        Runtime.UpdateFrequency = UpdateFrequency.Update10;
+    }
+    public void Main(string arg)
+    {
+        if (tick++ % 12 == 0)
+            Refresh();
+        float max_power = 0, cur_power = 0;
+        float max_gas = 0, cur_gas = 0;
+        foreach (var i in myGasTanks)
+        {
+            max_gas += (float)i.FilledRatio;
+            cur_gas += (float)i.Capacity;
+        }
+        foreach(var i in Battery)
+        {
+            max_power += i.MaxStoredPower;
+            cur_power += i.CurrentStoredPower;
+        }
+        LCD.WriteText("\t\tGas\n");
+        LCD.WriteText("===========================", true);
+        LCD.WriteText("\nMax Volume : "+ max_gas+ " ML" + "\nCurrent Volume : " + cur_gas/1000000 + " ML", true);
+        LCD.WriteText("\n\nPower\n", true);
+        LCD.WriteText("===========================", true);
+        LCD.WriteText("\nMax Power : " + max_power + " MgW" + "\nCurrent Power : " + cur_power + " MgW",true);
+    }
+    void Refresh()
+    {
+        myGasTanks = new List<IMyGasTank>();
+        Battery = new List<IMyBatteryBlock>();
+        GAS_group = GridTerminalSystem.GetBlockGroupWithName("Hydrogen tanks [Transporter]");
+        GAS_group.GetBlocksOfType<IMyGasTank>(myGasTanks);
+        Battery_group = GridTerminalSystem.GetBlockGroupWithName("[Transporter] battery");
+        Battery_group.GetBlocksOfType<IMyBatteryBlock>(Battery);
+    }
+}
