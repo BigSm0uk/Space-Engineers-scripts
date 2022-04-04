@@ -194,16 +194,5 @@ public sealed class Program : MyGridProgram
     {
         return Math.Acos(Vector3D.Dot(Vector3D.Normalize(controller[0].GetNaturalGravity()), Vector3D.Normalize(TargetXYZ - controller[0].GetPosition())));
     }
-    Vector3D GravPreemptionCalc()
-    {
-        ThrusterPower = 0;
-        foreach (var i in thrusters)
-        {
-            ThrusterPower += i.CurrentThrust;
-        }
-        Vector3D GravPreemptionXYZ = controller[0].GetNaturalGravity() * controller[0].CalculateShipMass().PhysicalMass;
-        
-        Vector3D ThrusterPowerXYZ = Math.Cos(Math.Asin(-(GravPreemptionXYZ.Length())/ ThrusterPower)) / Vector3D.Normalize(TorpedoVelCalc());
-        return ThrusterPowerXYZ;
-    }
+   
 }
